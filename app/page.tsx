@@ -5,8 +5,9 @@ import { TopBar } from '@/components/top-bar'
 import { CameraCard } from '@/components/camera-card'
 import { ResultsCard } from '@/components/results-card'
 import { BottomNav } from '@/components/bottom-nav'
-// 1. IMPORT TENSORFLOW.JS
 import * as tf from '@tensorflow/tfjs'
+// Import icon loader untuk animasi loading overlay
+import { Loader2 } from 'lucide-react'
 
 // Tipe data untuk menampung hasil prediksi
 interface PredictionResult {
@@ -20,27 +21,37 @@ export default function Page() {
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const [showResults, setShowResults] = useState(false)
   
-  // State baru untuk menyimpan hasil prediksi AI yang asli
-  const [model, setModel] = useState<tf.LayersModel | null>(null)
+  // State untuk model dan hasil prediksi
+  const [model, setModel] = useState<tf.GraphModel | null>(null)
   const [prediction, setPrediction] = useState<PredictionResult | null>(null)
 
-  // 2. LOAD MODEL SECARA OFFLINE PAS WEBSITE PERTAMA KALI DIBUKA
+  // STATE BARU: Untuk melacak status loading model AI di awal
+  const [isModelLoading, setIsModelLoading] = useState(true)
+  const [loadingMessage, setLoadingMessage] = useState("Menghubungkan ke AI Engine...")
+
+  // LOAD MODEL SAAT WEBSITES PERTAMA KALI DIBUKA
   useEffect(() => {
     async function loadModel() {
       try {
         console.log("Memuat model AI offline dari public/local_model...")
-        // Memanggil file JSON yang kamu taruh di folder public/local_model tadi
+        setLoadingMessage("Sedang mengunduh model deteksi jagung (mohon tunggu)...")
+        
+        // MENCOBA KEMBALI DENGAN loadLayersModel 
+        // Jika masih error, ganti teks di bawah menjadi: tf.loadGraphModel
         const loadedModel = await tf.loadGraphModel('/local_model/model.json')
+        
         setModel(loadedModel)
+        setIsModelLoading(false) // Sukses! Sembunyikan layar loading overlay
         console.log("🔥 BOOM! Model AI Offline Siap Digunakan!")
       } catch (error) {
         console.error("Gagal memuat model AI:", error)
+        setLoadingMessage("Gagal memuat model AI. Pastikan file model.json Anda valid atau coba refresh halaman.")
       }
     }
     loadModel()
   }, [])
 
-  // 3. FUNGSI UTAMA PROSES DETEKSI OFFLINE
+  // FUNGSI UTAMA PROSES DETEKSI OFFLINE
   const handleImageSelect = async (file: File) => {
     setSelectedFile(file)
     setShowResults(false)
@@ -53,24 +64,23 @@ export default function Page() {
     }
 
     try {
-      // Ubah file gambar menjadi objek HTMLImageElement agar bisa dibaca TensorFlow.js
       const imageUrl = URL.createObjectURL(file)
       const img = new Image()
       img.src = imageUrl
 
       img.onload = async () => {
-        // Preprocessing Gambar (Ubah ukuran ke 224x224, normalisasi 0-1, expand dimensi batch)
+        // Preprocessing Gambar
         const tensor = tf.browser.fromPixels(img)
-          .resizeNearestNeighbor([224, 224]) // Sesuaikan dengan input modelmu
+          .resizeNearestNeighbor([224, 224])
           .toFloat()
           .div(tf.scalar(255.0))
           .expandDims()
 
-        // EKSEKUSI PREDIKSI (100% OFFLINE DI HP PETANI)
+        // EKSEKUSI PREDIKSI
         const output = model.predict(tensor) as tf.Tensor
         const predictions = await output.data()
 
-        // Daftar label penyakit (Sesuaikan urutan kelasnya dengan pas kamu training)
+        // Daftar label penyakit
         const classes = [
           'Bercak Daun (Gray Leaf Spot)', 
           'Karat Daun (Common Rust)', 
@@ -78,7 +88,7 @@ export default function Page() {
           'Sehat (Healthy)'
         ]
 
-        // Data rekomendasi penanganan buat petani (Nilai plus skripsi!)
+        // Data rekomendasi penanganan buat petani
         const treatments: Record<string, string> = {
           'Bercak Daun (Gray Leaf Spot)': 'Gunakan fungisida berbahan aktif triazol. Lakukan rotasi tanaman untuk musim berikutnya.',
           'Karat Daun (Common Rust)': 'Semprotkan fungisida jika infeksi parah. Pastikan jarak tanam tidak terlalu rapat.',
@@ -86,24 +96,20 @@ export default function Page() {
           'Sehat (Healthy)': 'Tanaman jagung Anda sehat! Pertahankan pola pemupukan dan pengairan secara berkala.'
         }
 
-        // Cari index dengan nilai probabilitas tertinggi
         const maxIdx = predictions.indexOf(Math.max(...predictions))
         const diseaseResult = classes[maxIdx]
         const confidenceResult = (predictions[maxIdx] * 100).toFixed(2) + '%'
         const treatmentResult = treatments[diseaseResult]
 
-        // Simpan hasil aslinya ke dalam state
         setPrediction({
           disease: diseaseResult,
           confidence: confidenceResult,
           treatment: treatmentResult
         })
 
-        // Matikan loading dan tampilkan hasilnya
         setIsAnalyzing(false)
         setShowResults(true)
         
-        // Bersihkan memori tensor biar HP petani gak lemot
         tensor.dispose()
         output.dispose()
       }
@@ -122,13 +128,28 @@ export default function Page() {
   }
 
   return (
-    <main className="bg-white min-h-screen pb-24">
+    <main className="bg-white min-h-screen pb-24 relative">
+      
+      {/* FULL-SCREEN LOADING OVERLAY: Memblokir interaksi user sebelum model siap */}
+      {isModelLoading && (
+        <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-white/90 backdrop-blur-md transition-all duration-500">
+          <div className="flex flex-col items-center gap-4 p-6 text-center max-w-sm">
+            <Loader2 className="h-12 w-12 animate-spin text-emerald-600" />
+            <div className="space-y-2">
+              <h3 className="text-xl font-semibold tracking-tight text-neutral-800">Menyiapkan Aplikasi</h3>
+              <p className="text-sm text-neutral-500 animate-pulse">
+                {loadingMessage}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       <TopBar />
 
       <div className="max-w-2xl mx-auto">
         {!showResults && <CameraCard onImageSelect={handleImageSelect} isAnalyzing={isAnalyzing} />}
 
-        {/* 4. OPER DATA HASIL PREDIKSI ASLI KE RESULTS CARD */}
         {showResults && prediction && (
           <ResultsCard 
             image={selectedFile} 
