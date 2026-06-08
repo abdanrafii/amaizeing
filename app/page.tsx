@@ -6,10 +6,8 @@ import { CameraCard } from '@/components/camera-card'
 import { ResultsCard } from '@/components/results-card'
 import { BottomNav } from '@/components/bottom-nav'
 import * as tf from '@tensorflow/tfjs'
-// Import icon loader untuk animasi loading overlay
 import { Loader2 } from 'lucide-react'
 
-// Tipe data untuk menampung hasil prediksi
 interface PredictionResult {
   disease: string;
   confidence: string;
@@ -21,27 +19,23 @@ export default function Page() {
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const [showResults, setShowResults] = useState(false)
   
-  // State untuk model dan hasil prediksi
   const [model, setModel] = useState<tf.GraphModel | null>(null)
   const [prediction, setPrediction] = useState<PredictionResult | null>(null)
 
-  // STATE BARU: Untuk melacak status loading model AI di awal
   const [isModelLoading, setIsModelLoading] = useState(true)
   const [loadingMessage, setLoadingMessage] = useState("Menghubungkan ke AI Engine...")
 
-  // LOAD MODEL SAAT WEBSITES PERTAMA KALI DIBUKA
+  // 1. LOAD MODEL (Tetap GraphModel sesuai format file Anda)
   useEffect(() => {
     async function loadModel() {
       try {
         console.log("Memuat model AI offline dari public/local_model...")
         setLoadingMessage("Sedang mengunduh model deteksi jagung (mohon tunggu)...")
         
-        // MENCOBA KEMBALI DENGAN loadLayersModel 
-        // Jika masih error, ganti teks di bawah menjadi: tf.loadGraphModel
         const loadedModel = await tf.loadGraphModel('/local_model/model.json')
         
         setModel(loadedModel)
-        setIsModelLoading(false) // Sukses! Sembunyikan layar loading overlay
+        setIsModelLoading(false)
         console.log("🔥 BOOM! Model AI Offline Siap Digunakan!")
       } catch (error) {
         console.error("Gagal memuat model AI:", error)
@@ -51,7 +45,7 @@ export default function Page() {
     loadModel()
   }, [])
 
-  // FUNGSI UTAMA PROSES DETEKSI OFFLINE
+  // 2. FUNGSI UTAMA PROSES DETEKSI OFFLINE
   const handleImageSelect = async (file: File) => {
     setSelectedFile(file)
     setShowResults(false)
@@ -69,23 +63,28 @@ export default function Page() {
       img.src = imageUrl
 
       img.onload = async () => {
-        // Preprocessing Gambar
+        // --- PREPROCESSING GAMBAR (100% KLONING LOGIKA PYTHON LO) ---
         const tensor = tf.browser.fromPixels(img)
-          .resizeNearestNeighbor([224, 224])
+          .resizeBilinear([224, 224]) // Ganti ke Bilinear agar fitur karat/bercak tidak rusak
           .toFloat()
-          .div(tf.scalar(255.0))
+          .div(tf.scalar(255.0))      // Murni dibagi 255.0 sesuai fungsi parse_image lo
           .expandDims()
 
-        // EKSEKUSI PREDIKSI
+        // --- EKSEKUSI PREDIKSI ---
         const output = model.predict(tensor) as tf.Tensor
+        
+        console.log("--- DEBUG PREDIKSI TERBARU ---")
         const predictions = await output.data()
+        console.log("Angka Probabilitas Mentah Array:", Array.from(predictions))
+        console.log("------------------------------")
 
-        // Daftar label penyakit
+        // Daftar label penyakit berdasarkan urutan alfabetis folder dataset Python lo:
+        // Index 0: Blight, Index 1: Common_Rust, Index 2: Gray_Leaf_Spot, Index 3: Healthy
         const classes = [
-          'Bercak Daun (Gray Leaf Spot)', 
-          'Karat Daun (Common Rust)', 
-          'Hawar Daun (Northern Leaf Blight)', 
-          'Sehat (Healthy)'
+          'Hawar Daun (Northern Leaf Blight)', // Indeks 0
+          'Karat Daun (Common Rust)',          // Indeks 1
+          'Bercak Daun (Gray Leaf Spot)',      // Indeks 2
+          'Sehat (Healthy)'                    // Indeks 3
         ]
 
         // Data rekomendasi penanganan buat petani
@@ -96,9 +95,18 @@ export default function Page() {
           'Sehat (Healthy)': 'Tanaman jagung Anda sehat! Pertahankan pola pemupukan dan pengairan secara berkala.'
         }
 
-        const maxIdx = predictions.indexOf(Math.max(...predictions))
+        // Mencari indeks tertinggi (ArgMax manual yang aman)
+        let maxIdx = 0;
+        let maxVal = predictions[0];
+        for (let i = 1; i < predictions.length; i++) {
+          if (predictions[i] > maxVal) {
+            maxVal = predictions[i];
+            maxIdx = i;
+          }
+        }
+
         const diseaseResult = classes[maxIdx]
-        const confidenceResult = (predictions[maxIdx] * 100).toFixed(2) + '%'
+        const confidenceResult = (maxVal * 100).toFixed(2) + '%'
         const treatmentResult = treatments[diseaseResult]
 
         setPrediction({
@@ -110,6 +118,7 @@ export default function Page() {
         setIsAnalyzing(false)
         setShowResults(true)
         
+        // Hapus tensor dari memori untuk mencegah memory leak
         tensor.dispose()
         output.dispose()
       }
@@ -130,7 +139,7 @@ export default function Page() {
   return (
     <main className="bg-white min-h-screen pb-24 relative">
       
-      {/* FULL-SCREEN LOADING OVERLAY: Memblokir interaksi user sebelum model siap */}
+      {/* FULL-SCREEN LOADING OVERLAY */}
       {isModelLoading && (
         <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-white/90 backdrop-blur-md transition-all duration-500">
           <div className="flex flex-col items-center gap-4 p-6 text-center max-w-sm">
