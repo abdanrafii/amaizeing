@@ -4,14 +4,33 @@ import { useState, useEffect } from 'react'
 import { TopBar } from '@/components/top-bar'
 import { CameraCard } from '@/components/camera-card'
 import { ResultsCard } from '@/components/results-card'
-import { BottomNav } from '@/components/bottom-nav'
+import { BottomNav, type BottomTab } from '@/components/bottom-nav'
 import * as tf from '@tensorflow/tfjs'
-import { Loader2 } from 'lucide-react'
+import { CalendarClock, History, Leaf, Loader2, Sprout } from 'lucide-react'
 
 interface PredictionResult {
   disease: string;
   confidence: string;
-  treatment: string;
+}
+
+interface HistoryItem extends PredictionResult {
+  id: string;
+  fileName: string;
+  createdAt: string;
+}
+
+function parseDiseaseName(fullString: string) {
+  const regExp = /\(([^)]+)\)/;
+  const matches = regExp.exec(fullString);
+
+  if (matches && matches[1]) {
+    return {
+      name: fullString.replace(regExp, '').trim(),
+      latinName: matches[1],
+    };
+  }
+
+  return { name: fullString, latinName: '' };
 }
 
 export default function Page() {
@@ -21,6 +40,8 @@ export default function Page() {
   
   const [model, setModel] = useState<tf.GraphModel | null>(null)
   const [prediction, setPrediction] = useState<PredictionResult | null>(null)
+  const [activeTab, setActiveTab] = useState<BottomTab>('home')
+  const [history, setHistory] = useState<HistoryItem[]>([])
 
   const [isModelLoading, setIsModelLoading] = useState(true)
   const [loadingMessage, setLoadingMessage] = useState("Menghubungkan ke AI Engine...")
@@ -47,6 +68,7 @@ export default function Page() {
 
   // 2. FUNGSI UTAMA PROSES DETEKSI OFFLINE
   const handleImageSelect = async (file: File) => {
+    setActiveTab('home')
     setSelectedFile(file)
     setShowResults(false)
     setIsAnalyzing(true)
@@ -87,14 +109,6 @@ export default function Page() {
           'Sehat (Healthy)'                    // Indeks 3
         ]
 
-        // Data rekomendasi penanganan buat petani
-        const treatments: Record<string, string> = {
-          'Bercak Daun (Gray Leaf Spot)': 'Gunakan fungisida berbahan aktif triazol. Lakukan rotasi tanaman untuk musim berikutnya.',
-          'Karat Daun (Common Rust)': 'Semprotkan fungisida jika infeksi parah. Pastikan jarak tanam tidak terlalu rapat.',
-          'Hawar Daun (Northern Leaf Blight)': 'Gunakan varietas benih unggul yang tahan hawar. Bersihkan sisa tanaman setelah panen.',
-          'Sehat (Healthy)': 'Tanaman jagung Anda sehat! Pertahankan pola pemupukan dan pengairan secara berkala.'
-        }
-
         // Mencari indeks tertinggi (ArgMax manual yang aman)
         let maxIdx = 0;
         let maxVal = predictions[0];
@@ -107,13 +121,28 @@ export default function Page() {
 
         const diseaseResult = classes[maxIdx]
         const confidenceResult = (maxVal * 100).toFixed(2) + '%'
-        const treatmentResult = treatments[diseaseResult]
 
-        setPrediction({
+        const nextPrediction = {
           disease: diseaseResult,
-          confidence: confidenceResult,
-          treatment: treatmentResult
-        })
+          confidence: confidenceResult
+        }
+
+        setPrediction(nextPrediction)
+        setHistory((currentHistory) => [
+          {
+            ...nextPrediction,
+            id: `${Date.now()}-${file.name}`,
+            fileName: file.name,
+            createdAt: new Date().toLocaleString('id-ID', {
+              day: '2-digit',
+              month: 'short',
+              year: 'numeric',
+              hour: '2-digit',
+              minute: '2-digit',
+            }),
+          },
+          ...currentHistory,
+        ].slice(0, 10))
 
         setIsAnalyzing(false)
         setShowResults(true)
@@ -128,16 +157,16 @@ export default function Page() {
     }
   }
 
-  const handleNavigate = (tab: 'home' | 'history' | 'about') => {
-    if (tab === 'home') {
-      setSelectedFile(null)
-      setShowResults(false)
-      setPrediction(null)
+  const handleNavigate = (tab: BottomTab) => {
+    if (tab === 'home' && activeTab === 'home' && selectedFile) {
+      return
     }
+
+    setActiveTab(tab)
   }
 
   return (
-    <main className="bg-white min-h-screen pb-24 relative">
+    <main className="relative min-h-screen bg-[linear-gradient(180deg,#f0fdf4_0%,#ffffff_38%,#f8fafc_100%)] pb-28">
       
       {/* FULL-SCREEN LOADING OVERLAY */}
       {isModelLoading && (
@@ -156,34 +185,106 @@ export default function Page() {
 
       <TopBar />
 
-      <div className="max-w-2xl mx-auto">
-        {!showResults && <CameraCard onImageSelect={handleImageSelect} isAnalyzing={isAnalyzing} />}
+      <div className="mx-auto max-w-5xl">
+        {activeTab === 'home' && (
+          <>
+            {!showResults && <CameraCard onImageSelect={handleImageSelect} isAnalyzing={isAnalyzing} />}
 
-        {showResults && prediction && (
-          <ResultsCard 
-            image={selectedFile} 
-            show={showResults} 
-            disease={prediction.disease}
-            confidence={prediction.confidence}
-            treatment={prediction.treatment}
-          />
+            {showResults && prediction && (
+              <ResultsCard
+                image={selectedFile}
+                show={showResults}
+                disease={prediction.disease}
+                confidence={prediction.confidence}
+                onImageSelect={handleImageSelect}
+              />
+            )}
+
+            {isAnalyzing && (
+              <div className="px-4 py-8">
+                <div className="mx-auto max-w-md rounded-3xl border border-emerald-100 bg-white/85 p-6 text-center shadow-lg shadow-emerald-100/60 backdrop-blur">
+                  <div className="flex items-center justify-center gap-2">
+                    <div className="h-2.5 w-2.5 animate-bounce rounded-full bg-emerald-600" style={{ animationDelay: '0ms' }} />
+                    <div className="h-2.5 w-2.5 animate-bounce rounded-full bg-emerald-600" style={{ animationDelay: '150ms' }} />
+                    <div className="h-2.5 w-2.5 animate-bounce rounded-full bg-emerald-600" style={{ animationDelay: '300ms' }} />
+                  </div>
+                  <p className="mt-4 font-semibold text-emerald-700">
+                    Sedang mendeteksi daun jagung (Offline)...
+                  </p>
+                </div>
+              </div>
+            )}
+          </>
         )}
 
-        {isAnalyzing && (
-          <div className="px-4 py-8">
-            <div className="flex justify-center items-center gap-2">
-              <div className="w-2 h-2 rounded-full bg-emerald-600 animate-bounce" style={{ animationDelay: '0ms' }} />
-              <div className="w-2 h-2 rounded-full bg-emerald-600 animate-bounce" style={{ animationDelay: '150ms' }} />
-              <div className="w-2 h-2 rounded-full bg-emerald-600 animate-bounce" style={{ animationDelay: '300ms' }} />
+        {activeTab === 'history' && (
+          <section className="px-4 py-6 sm:py-10">
+            <div className="mb-5 flex items-end justify-between gap-4">
+              <div>
+                <p className="text-sm font-semibold text-emerald-700">Riwayat analisis</p>
+                <h2 className="mt-1 text-2xl font-bold text-gray-950 sm:text-3xl">History Deteksi</h2>
+              </div>
+              <div className="hidden h-12 w-12 items-center justify-center rounded-2xl bg-emerald-100 sm:flex">
+                <History className="h-6 w-6 text-emerald-700" />
+              </div>
             </div>
-            <p className="text-center text-emerald-600 mt-4 font-medium">
-              Sedang mendeteksi daun jagung (Offline)...
-            </p>
-          </div>
+
+            {history.length === 0 ? (
+              <div className="rounded-3xl border border-dashed border-emerald-300 bg-white/85 p-8 text-center shadow-sm">
+                <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-100">
+                  <Sprout className="h-7 w-7 text-emerald-700" />
+                </div>
+                <h3 className="text-lg font-bold text-gray-950">Belum ada history</h3>
+                <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-gray-600">
+                  Hasil diagnosis akan otomatis tersimpan di sini setelah Anda mengambil foto atau upload gambar daun jagung.
+                </p>
+              </div>
+            ) : (
+              <div className="grid gap-4 md:grid-cols-2">
+                {history.map((item) => {
+                  const { name, latinName } = parseDiseaseName(item.disease)
+
+                  return (
+                    <article
+                      key={item.id}
+                      className="rounded-3xl border border-emerald-100 bg-white p-5 shadow-lg shadow-emerald-100/50"
+                    >
+                      <div className="mb-4 flex items-start justify-between gap-3">
+                        <div className="flex min-w-0 items-start gap-3">
+                          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-emerald-100">
+                            <Leaf className="h-6 w-6 text-emerald-700" />
+                          </div>
+                          <div className="min-w-0">
+                            <h3 className="truncate text-lg font-bold text-gray-950">{name}</h3>
+                            {latinName && <p className="truncate text-sm italic text-gray-500">{latinName}</p>}
+                          </div>
+                        </div>
+                        <span className="shrink-0 rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-700">
+                          {item.confidence}
+                        </span>
+                      </div>
+
+                      <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-gray-100 pt-4 text-xs text-gray-500">
+                        <span className="max-w-56 truncate">{item.fileName}</span>
+                        <span className="inline-flex items-center gap-1.5 font-medium">
+                          <CalendarClock className="h-4 w-4" />
+                          {item.createdAt}
+                        </span>
+                      </div>
+                    </article>
+                  )
+                })}
+              </div>
+            )}
+          </section>
         )}
       </div>
 
-      <BottomNav onNavigate={handleNavigate} />
+      <BottomNav
+        activeTab={activeTab}
+        disableScan={activeTab === 'home' && !!selectedFile}
+        onNavigate={handleNavigate}
+      />
     </main>
   )
 }
