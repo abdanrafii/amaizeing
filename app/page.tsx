@@ -92,8 +92,14 @@ export default function Page() {
           .div(tf.scalar(255.0))      // Murni dibagi 255.0 sesuai fungsi parse_image lo
           .expandDims()
 
+        console.log("=== MEMORI SEBELUM PREDIKSI ===");
+        console.log(tf.memory());
+
         // --- EKSEKUSI PREDIKSI ---
         const output = model.predict(tensor) as tf.Tensor
+
+        console.log("=== MEMORI SESUDAH PREDIKSI ===");
+        console.log(tf.memory());
         
         console.log("--- DEBUG PREDIKSI TERBARU ---")
         const predictions = await output.data()
