@@ -107,11 +107,11 @@ export function ResultsCard({ image, show, disease = '', confidence = '0%', onIm
           </div>
 
           {/* Additional Info / Disclaimer Ilmiah untuk Skripsi */}
-          <div className="rounded-2xl border border-teal-200 bg-teal-50 p-4">
+          {/* <div className="rounded-2xl border border-teal-200 bg-teal-50 p-4">
             <p className="text-xs text-teal-800 leading-relaxed">
               <strong>Tips Lapangan:</strong> Lakukan pemantauan area sawah secara berkala. Deteksi dini sangat membantu mempertahankan hasil tonase panen jagung Anda.
             </p>
-          </div>
+          </div> */}
 
           {onImageSelect && (
             <div className="grid gap-3 border-t border-gray-200 pt-5 sm:grid-cols-2">
